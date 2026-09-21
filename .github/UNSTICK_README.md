@@ -1,20 +1,22 @@
-# Unstick status (2026-09-14)
+# Unstick status (2026-09-21)
 
 Weekly unsticker PAT (`RELEASE_TOKEN`) can push **non-workflow** commits to
-`main` (ruleset bypass) but **cannot**:
+`main` (ruleset bypass) and **create** issues, but **cannot**:
 
 | Action | Result |
 |---|---|
 | Push `.github/workflows/*` | rejected — missing `workflow` / Workflows write |
-| `gh pr create` | 403 |
+| `gh pr create` (after workflow push fails) | blocked |
 | `gh run rerun` / `gh workflow run` | 403 |
-| Issue comment / edit | 403 |
-| Read Actions `GITHUB_TOKEN` in Supervisor agent step | not injected (only `GH_TOKEN=RELEASE_TOKEN`) |
+| Issue comment / edit / close | 403 |
+| Read Actions `GITHUB_TOKEN` in Supervisor agent step | not injected (only `GH_TOKEN=RELEASE_TOKEN`; `GITHUB_TOKEN` empty) |
 
 No open Dependabot PRs. Dependabot Updates (cargo + GHA) succeeded today;
-GHA opened/merged #18 (`codeql-action` 4.37.9→4.38.0). Default-branch
+GHA opened/merged #19 (`codeql-action` 4.38.0→4.38.1). Default-branch
 scheduled CI is green. Tags **v0.2.5** / **v0.2.6** exist; npm latest remains
 **0.2.4**.
+
+Tracking: see the 2026-09-21 unstick issue.
 
 ## Still blocked (owner apply)
 
@@ -23,7 +25,7 @@ Release for **v0.2.5** and **v0.2.6** fail npm publish with E404 because
 OIDC trusted publishing.
 
 Dependabot auto-merge still uses `GITHUB_TOKEN` on `pull_request`, so merges
-(e.g. #18) do not start Auto Tag / Test / CodeQL on the resulting `main` push.
+(e.g. #19) do not start Auto Tag / Test / CodeQL on the resulting `main` push.
 
 Patch is ready on `main`: `.github/unstick-dependabot-oidc.patch`.
 
