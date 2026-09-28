@@ -55,18 +55,40 @@ index fda0835..c042ae3 100644
 +          NODE_AUTH_TOKEN: ""
 +        run: npm publish --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
 diff --git a/.github/workflows/supervisor.yml b/.github/workflows/supervisor.yml
-index 8c48c42..dbce5ab 100644
+index 8c48c42..bafd0d7 100644
 --- a/.github/workflows/supervisor.yml
 +++ b/.github/workflows/supervisor.yml
-@@ -34,6 +34,8 @@ jobs:
+@@ -11,6 +11,8 @@ permissions:
+   issues: write
+   checks: read
+   actions: read
++  # Required so the injected GITHUB_TOKEN can push .github/workflows/*.
++  workflows: write
+ 
+ concurrency:
+   group: weekly-unstick
+@@ -34,6 +36,9 @@ jobs:
          env:
            CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
            GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-+          # Actions GITHUB_TOKEN can update .github/workflows/*; RELEASE_TOKEN cannot.
++          # workflows: write. Checkout uses RELEASE_TOKEN, which cannot push
++          # workflow files; point git at GITHUB_TOKEN for those pushes.
 +          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
          run: |
            agent -p "$(cat <<'PROMPT'
            You are the weekly unsticker for this repository.
+@@ -49,6 +54,11 @@ jobs:
+           - Do not weaken branch protection or disable required checks.
+           - Open or update a PR if direct push is blocked; otherwise push to
+             the default branch only when safe and hooks/CI would pass.
++          - GH_TOKEN is RELEASE_TOKEN (can push non-workflow commits to main,
++            cannot edit .github/workflows or open PRs). For workflow-file
++            pushes and pull requests, use GITHUB_TOKEN (workflows: write).
++            Checkout's remote is RELEASE_TOKEN, so retarget git at
++            GITHUB_TOKEN before those pushes.
+           - Summarize what was stuck and what you did at the end.
+           PROMPT
+           )" --model auto --force --trust --sandbox disabled
 diff --git a/.github/workflows/update-outdated-prs.yml b/.github/workflows/update-outdated-prs.yml
 index 7df7b68..532bb7b 100644
 --- a/.github/workflows/update-outdated-prs.yml
