@@ -1,6 +1,6 @@
 [package]
 name = "wasm-pqc-subtle"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 authors = ["github.com/geoffsee"]
 repository = "https://github.com/geoffsee/wasm-pqc-subtle"
