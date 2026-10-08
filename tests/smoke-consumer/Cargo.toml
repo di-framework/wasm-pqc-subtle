@@ -1,0 +1,13 @@
+[package]
+name = "pqc-smoke-consumer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "wasip2 command component that imports pqc-subtle:crypto; composed with the provider via `wac plug` and run under wasmtime by `make smoke`."
+
+[[bin]]
+name = "pqc-smoke-consumer"
+path = "src/main.rs"
+
+[dependencies]
+wit-bindgen = { version = "0.61.1", default-features = false, features = ["macros"] }

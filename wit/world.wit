@@ -1,0 +1,92 @@
+package pqc-subtle:crypto@0.1.0;
+
+/// Types shared by the three interfaces, kept apart so values unify when a
+/// consumer and this provider are composed with `wac plug`.
+interface types {
+  /// A generated key pair. Encodings follow FIPS 203 / FIPS 204 byte layouts.
+  record key-pair {
+    public-key: list<u8>,
+    secret-key: list<u8>,
+  }
+
+  /// Result of ML-KEM encapsulation.
+  record encapsulation {
+    ciphertext: list<u8>,
+    /// Always 32 bytes.
+    shared-secret: list<u8>,
+  }
+
+  /// Non-exhaustive: consumers keep a catch-all arm.
+  variant error {
+    /// A key, ciphertext, or signature had the wrong byte length for the parameter set.
+    invalid-length(string),
+    /// Bytes had the right length but did not decode (signature, PHC string).
+    invalid-encoding(string),
+    /// The primitive itself failed.
+    failed(string),
+  }
+}
+
+/// ML-KEM (FIPS 203) key encapsulation.
+interface ml-kem {
+  use types.{key-pair, encapsulation, error};
+
+  enum parameter-set {
+    ml-kem-768,
+    ml-kem-1024,
+  }
+
+  generate-keypair: func(set: parameter-set) -> key-pair;
+  encapsulate: func(set: parameter-set, public-key: list<u8>) -> result<encapsulation, error>;
+  decapsulate: func(set: parameter-set, secret-key: list<u8>, ciphertext: list<u8>) -> result<list<u8>, error>;
+}
+
+/// ML-DSA (FIPS 204) digital signatures.
+interface ml-dsa {
+  use types.{key-pair, error};
+
+  enum parameter-set {
+    ml-dsa-44,
+    ml-dsa-65,
+    ml-dsa-87,
+  }
+
+  generate-keypair: func(set: parameter-set) -> key-pair;
+  sign: func(set: parameter-set, secret-key: list<u8>, message: list<u8>) -> result<list<u8>, error>;
+  verify: func(set: parameter-set, public-key: list<u8>, message: list<u8>, signature: list<u8>) -> result<bool, error>;
+}
+
+/// Argon2id (RFC 9106) password hashing with PHC string output.
+interface argon2 {
+  use types.{error};
+
+  /// Cost parameters. `output-length` defaults to 32 bytes.
+  record params {
+    memory-kib: u32,
+    iterations: u32,
+    parallelism: u32,
+    output-length: option<u32>,
+  }
+
+  /// Hashes `password` with a fresh random salt. `params` absent means the
+  /// `argon2` crate defaults (m=19456 KiB, t=2, p=1). Returns a PHC string.
+  hash: func(password: list<u8>, params: option<params>) -> result<string, error>;
+
+  /// Verifies `password` against a PHC string, using the parameters it carries.
+  verify: func(password: list<u8>, phc: string) -> result<bool, error>;
+}
+
+/// The library as a component: nothing imported beyond `wasi:random`.
+world pqc-subtle {
+  export ml-kem;
+  export ml-dsa;
+  export argon2;
+}
+
+/// The consumer side, for bindings in components that import this package
+/// (and for `tests/smoke-consumer`).
+world imports {
+  import ml-kem;
+  import ml-dsa;
+  import argon2;
+}

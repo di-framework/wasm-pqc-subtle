@@ -42,3 +42,40 @@ jobs:
 
       - name: Build WASM package
         run: make build
+
+  component:
+    name: Component (wasm32-wasip2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-wasip2-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add wasm32-wasip2
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install wasm-tools and wac
+        run: cargo binstall -y wasm-tools wac-cli
+
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+
+      - name: Build component
+        run: make component
+
+      - name: Smoke (wac plug + wasmtime)
+        run: make smoke
+
+      - name: Component build info
+        run: cat dist/BUILD-INFO

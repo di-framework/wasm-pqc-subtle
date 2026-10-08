@@ -98,6 +98,37 @@ Notes:
 - `argon2_verify` parses the PHC string and verifies using parameters embedded in it.
 - Defaults are tuned by the upstream `argon2` crate and suitable for browsers; adjust at build-time if you need stricter limits.
 
+## WebAssembly component (wasm32-wasip2)
+
+The same implementation also builds as a [WebAssembly component](https://component-model.bytecodealliance.org/) exporting `pqc-subtle:crypto@0.1.0` (`wit/world.wit`): interfaces `ml-kem`, `ml-dsa`, and `argon2`. Use it where there is no JavaScript `WebAssembly` API, for example inside another component (a QuickJS or Rust guest on wasmCloud or wasmtime), by composing it in at build time with [`wac plug`](https://github.com/bytecodealliance/wac).
+
+```sh
+rustup target add wasm32-wasip2
+cargo binstall wasm-tools wac-cli     # or cargo install
+make component                        # -> dist/pqc-subtle.wasm (+ .wit, BUILD-INFO)
+make smoke                            # compose tests/smoke-consumer with it and run under wasmtime
+```
+
+A consumer declares the imports in its own WIT (the `imports` world in `wit/world.wit` is that list) and gets bindings from `wit-bindgen`, `jco`, or componentize-qjs. Then:
+
+```sh
+wac plug --plug dist/pqc-subtle.wasm consumer.wasm -o composed.wasm
+```
+
+After plugging, the only `pqc-subtle` name left on the composed component is the type-only `types` interface; every function import is satisfied. The component itself imports `wasi:random/random` for salts and keys, plus the `wasi:cli`/`wasi:io` set the Rust standard library needs.
+
+```wit
+interface argon2 {
+  record params { memory-kib: u32, iterations: u32, parallelism: u32, output-length: option<u32> }
+  hash: func(password: list<u8>, params: option<params>) -> result<string, error>;
+  verify: func(password: list<u8>, phc: string) -> result<bool, error>;
+}
+```
+
+`hash` with `params` absent uses the `argon2` crate defaults (m=19456 KiB, t=2, p=1). Pass explicit parameters for parity with hashes made elsewhere, for example Spring Security's m=16384, t=2, p=1; `verify` always reads the parameters from the PHC string. The wasm-bindgen surface gained `argon2id_hash_with_params(password, memory_kib, iterations, parallelism)` for the same reason.
+
+Cargo features: `bindgen` (default) is the wasm-bindgen surface; `component` is the WIT world. The core lives in `src/algorithms.rs` and is plain Rust, also usable natively.
+
 ## API
 
 ### ML-KEM API

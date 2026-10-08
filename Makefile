@@ -2,7 +2,7 @@
 
 WASM_OPT := $(shell command -v wasm-opt 2>/dev/null)
 
-.PHONY: all build optimize clean publish test fmt
+.PHONY: all build optimize clean publish test fmt component smoke
 
 all: optimize
 
@@ -26,8 +26,16 @@ test:
 	cargo test --all-features
 	cargo fmt --all -- --check
 
+# WebAssembly component (pqc-subtle:crypto@0.1.0) for wasm32-wasip2 -> dist/pqc-subtle.wasm
+component:
+	scripts/build-component.sh
+
+# Compose tests/smoke-consumer with the component (wac plug) and run it under wasmtime
+smoke: component
+	scripts/smoke.sh
+
 fmt:
 	cargo fmt --all
 
 clean:
-	rm -rf target pkg
+	rm -rf target pkg dist
