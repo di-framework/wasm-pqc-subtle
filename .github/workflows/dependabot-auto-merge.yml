@@ -1,6 +1,9 @@
 name: Dependabot auto-merge
 
-on: pull_request
+# pull_request_target + RELEASE_TOKEN so the merge commit is attributed to a
+# real user token and triggers Auto Tag / CI on main (GITHUB_TOKEN merges do not).
+
+on: pull_request_target
 
 permissions:
   contents: write
@@ -18,11 +21,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable auto-merge for non-major updates
-        if: >
-          steps.metadata.outputs.dependency-group != 'bun-major' &&
-          steps.metadata.outputs.dependency-group != 'cargo-major' &&
-          steps.metadata.outputs.update-type != 'version-update:semver-major'
+        # Gate on semver only — Dependabot may put patch bumps in cargo-major
+        # when the group is defined by update-type major patterns alone.
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}

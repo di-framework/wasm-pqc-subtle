@@ -43,6 +43,16 @@ jobs:
       - name: Build WASM package
         run: make build
 
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Add the component surface to pkg and check the tarball
+        run: |
+          rustup target add wasm32-wasip2
+          cargo binstall -y wasm-tools
+          make component
+          node scripts/package-component.mjs
+          cd pkg && npm pack --dry-run 2>&1 | tee /dev/stderr | grep -q 'component/pqc-subtle.wasm'
+
   component:
     name: Component (wasm32-wasip2)
     runs-on: ubuntu-latest

@@ -2,8 +2,8 @@
 name = "wasm-pqc-subtle"
 version = "0.2.7"
 edition = "2024"
-authors = ["github.com/geoffsee"]
-repository = "https://github.com/geoffsee/wasm-pqc-subtle"
+authors = ["di-framework"]
+repository = "https://github.com/di-framework/wasm-pqc-subtle"
 description = "Library for cross-platform post-quantum cryptography"
 
 [workspace]
@@ -20,15 +20,13 @@ bindgen = ["dep:wasm-bindgen"]
 component = ["dep:wit-bindgen"]
 
 [dependencies]
-ml-dsa = "0.0.4"
-ml-kem = "0.2.2"
+ml-dsa = "0.1.1"
+ml-kem = { version = "0.3.2", features = ["getrandom"] }
 argon2 = "0.6.0"
 password-hash = { version = "0.6.1", optional = true, features = ["phc"] }
 wasm-bindgen = { version = "0.2", optional = true }
 wit-bindgen = { version = "0.61.1", optional = true, default-features = false, features = ["macros"] }
-getrandom = { version = "0.2", features = ["js"] }
 getrandom04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
-rand_core = { version = "0.6", features = ["getrandom"] }
 
 [profile.release]
 opt-level = 3

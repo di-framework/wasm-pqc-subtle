@@ -17,7 +17,8 @@ jobs:
     steps:
       - name: Update out-of-date PR branches
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN (push access) so Dependabot honors @dependabot rebase.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
 

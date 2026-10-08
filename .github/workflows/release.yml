@@ -30,29 +30,39 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
-          rustup target add wasm32-unknown-unknown
+          rustup target add wasm32-unknown-unknown wasm32-wasip2
+
+      - uses: cargo-bins/cargo-binstall@main
 
       - name: Install wasm toolchain
-        run: |
-          cargo install wasm-bindgen-cli --locked || cargo install wasm-bindgen-cli
-          cargo install wasm-pack --locked || cargo install wasm-pack
+        run: cargo binstall -y wasm-bindgen-cli wasm-pack wasm-tools
 
       - name: Build package
         run: |
           if [ -f Makefile ] && grep -q '^build:' Makefile; then
             make build
           else
-            wasm-pack build --target web --release
+            wasm-pack build --target web --release --scope di-framework
           fi
 
+      # Do not set setup-node registry-url: it writes an .npmrc with
+      # _authToken=${NODE_AUTH_TOKEN}, which short-circuits OIDC trusted publishing
+      # and surfaces a misleading E404 from the registry.
       - uses: actions/setup-node@v7
         with:
           node-version: "24.x"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Ensure modern npm for OIDC trusted publishing
         run: npm install -g npm@latest
 
+      - name: Build component and add it to pkg
+        run: |
+          make component
+          node scripts/package-component.mjs
+          cat dist/BUILD-INFO
+
       - name: Publish pkg to npm
         working-directory: pkg
-        run: npm publish --access public --provenance --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ""
+        run: npm publish --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org

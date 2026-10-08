@@ -5,14 +5,17 @@ use argon2::password_hash::phc::{PasswordHash, Salt};
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use ml_dsa::signature::{Signer, Verifier};
 use ml_dsa::{
-    EncodedSignature, EncodedSigningKey, EncodedVerifyingKey, KeyGen, MlDsa44, MlDsa65, MlDsa87,
-    MlDsaParams, Signature, SigningKey, VerifyingKey,
+    EncodedSignature, ExpandedSigningKey, ExpandedSigningKeyBytes, Generate, KeyExport, KeyInit,
+    KeySizeUser, Keypair, MlDsa44, MlDsa65, MlDsa87, MlDsaParams, Signature, SigningKey,
+    VerifyingKey,
 };
-use ml_kem::kem::{Decapsulate, Encapsulate};
-use ml_kem::{Ciphertext, Encoded, EncodedSizeUser, KemCore, MlKem768, MlKem1024};
-use rand_core::OsRng;
+use ml_kem::{Decapsulate, Encapsulate, Kem, MlKem768, MlKem1024, TryKeyInit};
 
 /// A generated key pair, encoded per FIPS 203 / FIPS 204.
+///
+/// `secret_key` is the seed form the crates now standardise on: 64 bytes for ML-KEM, 32 bytes
+/// for ML-DSA. `decapsulate` and `sign` also accept the expanded encodings earlier releases
+/// produced (for example 2400 bytes for ML-KEM-768), so stored keys keep working.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyPair {
     pub public_key: Vec<u8>,
@@ -91,54 +94,62 @@ pub fn ml_kem_decapsulate(
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, Error> {
     match set {
-        MlKemSet::MlKem768 => kem_decapsulate::<MlKem768>(secret_key, ciphertext),
-        MlKemSet::MlKem1024 => kem_decapsulate::<MlKem1024>(secret_key, ciphertext),
+        MlKemSet::MlKem768 => kem_decapsulate!(MlKem768, secret_key, ciphertext),
+        MlKemSet::MlKem1024 => kem_decapsulate!(MlKem1024, secret_key, ciphertext),
     }
 }
 
-fn kem_generate<K: KemCore>() -> KeyPair {
-    let (sk, pk) = K::generate(&mut OsRng);
-    KeyPair {
-        public_key: pk.as_bytes().to_vec(),
-        secret_key: sk.as_bytes().to_vec(),
-    }
-}
-
-fn kem_encapsulate<K>(public_key: &[u8]) -> Result<Encapsulation, Error>
+fn kem_generate<K: Kem>() -> KeyPair
 where
-    K: KemCore,
-    K::EncapsulationKey: EncodedSizeUser,
+    K::DecapsulationKey: KeyExport,
 {
-    let encoded: Encoded<K::EncapsulationKey> = public_key
-        .try_into()
-        .map_err(|_| Error::InvalidLength("Invalid public key length".into()))?;
-    let pk = K::EncapsulationKey::from_bytes(&encoded);
-    let (ct, ss) = pk
-        .encapsulate(&mut OsRng)
-        .map_err(|_| Error::Failed("Encapsulation failed".into()))?;
+    let (dk, ek) = K::generate_keypair();
+    KeyPair {
+        public_key: ek.to_bytes().to_vec(),
+        secret_key: dk.to_bytes().to_vec(),
+    }
+}
+
+fn kem_encapsulate<K: Kem>(public_key: &[u8]) -> Result<Encapsulation, Error> {
+    if public_key.len() != K::EncapsulationKey::key_size() {
+        return Err(Error::InvalidLength("Invalid public key length".into()));
+    }
+    let ek = K::EncapsulationKey::new_from_slice(public_key)
+        .map_err(|_| Error::InvalidEncoding("Invalid public key encoding".into()))?;
+    let (ct, ss) = ek.encapsulate();
     Ok(Encapsulation {
         ciphertext: ct.to_vec(),
         shared_secret: ss.to_vec(),
     })
 }
 
-fn kem_decapsulate<K>(secret_key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error>
-where
-    K: KemCore,
-    K::DecapsulationKey: EncodedSizeUser,
-{
-    let encoded: Encoded<K::DecapsulationKey> = secret_key
-        .try_into()
-        .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?;
-    let sk = K::DecapsulationKey::from_bytes(&encoded);
-    let ct: Ciphertext<K> = ciphertext
-        .try_into()
-        .map_err(|_| Error::InvalidLength("Invalid ciphertext length".into()))?;
-    let ss = sk
-        .decapsulate(&ct)
-        .map_err(|_| Error::Failed("Decapsulation failed".into()))?;
-    Ok(ss.to_vec())
+/// Accepts the 64-byte seed or the expanded decapsulation key earlier releases produced.
+/// A macro rather than a generic: the expanded encoding's size is typenum arithmetic over the
+/// parameter set, which only resolves for concrete types.
+macro_rules! kem_decapsulate {
+    ($set:ty, $secret_key:expr, $ciphertext:expr) => {{
+        type Dk = ml_kem::DecapsulationKey<$set>;
+        let secret_key: &[u8] = $secret_key;
+        let dk = if secret_key.len() == Dk::key_size() {
+            Dk::new_from_slice(secret_key)
+                .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?
+        } else {
+            #[allow(deprecated)]
+            {
+                let expanded: &ml_kem::ExpandedDecapsulationKey<$set> = secret_key
+                    .try_into()
+                    .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?;
+                Dk::from_expanded(expanded)
+                    .map_err(|_| Error::InvalidEncoding("Invalid secret key encoding".into()))?
+            }
+        };
+        let ss = dk
+            .decapsulate_slice($ciphertext)
+            .map_err(|_| Error::InvalidLength("Invalid ciphertext length".into()))?;
+        Ok(ss.to_vec())
+    }};
 }
+use kem_decapsulate;
 
 // ── ML-DSA ──────────────────────────────────────────────────────────────
 
@@ -172,19 +183,27 @@ pub fn ml_dsa_verify(
 }
 
 fn dsa_generate<P: MlDsaParams>() -> KeyPair {
-    let kp = P::key_gen(&mut OsRng);
+    let sk = SigningKey::<P>::generate();
     KeyPair {
-        public_key: kp.verifying_key().encode().to_vec(),
-        secret_key: kp.signing_key().encode().to_vec(),
+        public_key: sk.verifying_key().to_bytes().to_vec(),
+        secret_key: sk.to_bytes().to_vec(),
     }
 }
 
+/// Accepts the 32-byte seed or the expanded signing key earlier releases produced.
 fn dsa_sign<P: MlDsaParams>(secret_key: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
-    let encoded: EncodedSigningKey<P> = secret_key
-        .try_into()
-        .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?;
-    let sk = SigningKey::<P>::decode(&encoded);
-    Ok(sk.sign(message).encode().to_vec())
+    let signature = if secret_key.len() == SigningKey::<P>::key_size() {
+        SigningKey::<P>::new_from_slice(secret_key)
+            .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?
+            .sign(message)
+    } else {
+        let expanded: &ExpandedSigningKeyBytes<P> = secret_key
+            .try_into()
+            .map_err(|_| Error::InvalidLength("Invalid secret key length".into()))?;
+        #[allow(deprecated)]
+        ExpandedSigningKey::<P>::from_expanded(expanded).sign(message)
+    };
+    Ok(signature.encode().to_vec())
 }
 
 fn dsa_verify<P: MlDsaParams>(
@@ -192,14 +211,12 @@ fn dsa_verify<P: MlDsaParams>(
     message: &[u8],
     signature: &[u8],
 ) -> Result<bool, Error> {
-    let encoded: EncodedVerifyingKey<P> = public_key
-        .try_into()
+    let pk = VerifyingKey::<P>::new_from_slice(public_key)
         .map_err(|_| Error::InvalidLength("Invalid public key length".into()))?;
-    let pk = VerifyingKey::<P>::decode(&encoded);
-    let encoded_sig: EncodedSignature<P> = signature
+    let encoded_sig: &EncodedSignature<P> = signature
         .try_into()
         .map_err(|_| Error::InvalidLength("Invalid signature length".into()))?;
-    let sig = Signature::<P>::decode(&encoded_sig)
+    let sig = Signature::<P>::decode(encoded_sig)
         .ok_or_else(|| Error::InvalidEncoding("Invalid signature encoding".into()))?;
     Ok(pk.verify(message, &sig).is_ok())
 }
@@ -258,6 +275,40 @@ mod tests {
                 .public_key
                 .len(),
             1568
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn ml_kem_accepts_the_expanded_secret_key_of_earlier_releases() {
+        use ml_kem::ExpandedKeyEncoding;
+        let kp = ml_kem_generate_keypair(MlKemSet::MlKem768);
+        let seed: ml_kem::Seed = kp.secret_key.as_slice().try_into().unwrap();
+        let expanded = ml_kem::DecapsulationKey::<MlKem768>::from_seed(seed).to_expanded_bytes();
+        assert_eq!(expanded.len(), 2400);
+        let enc = ml_kem_encapsulate(MlKemSet::MlKem768, &kp.public_key).unwrap();
+        let ss = ml_kem_decapsulate(MlKemSet::MlKem768, &expanded, &enc.ciphertext).unwrap();
+        assert_eq!(ss, enc.shared_secret);
+        let mut corrupt = expanded.to_vec();
+        corrupt[1300] ^= 1;
+        assert!(matches!(
+            ml_kem_decapsulate(MlKemSet::MlKem768, &corrupt, &enc.ciphertext),
+            Err(Error::InvalidEncoding(_))
+        ));
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn ml_dsa_accepts_the_expanded_secret_key_of_earlier_releases() {
+        let kp = ml_dsa_generate_keypair(MlDsaSet::MlDsa65);
+        assert_eq!(kp.secret_key.len(), 32);
+        let seed: ml_dsa::Seed = kp.secret_key.as_slice().try_into().unwrap();
+        let expanded = ExpandedSigningKey::<MlDsa65>::from_seed(&seed).to_expanded();
+        assert_eq!(expanded.len(), 4032);
+        let sig = ml_dsa_sign(MlDsaSet::MlDsa65, &expanded, b"legacy").unwrap();
+        assert_eq!(
+            ml_dsa_verify(MlDsaSet::MlDsa65, &kp.public_key, b"legacy", &sig),
+            Ok(true)
         );
     }
 

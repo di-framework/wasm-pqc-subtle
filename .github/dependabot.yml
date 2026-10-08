@@ -8,8 +8,6 @@ updates:
       time: "09:00"
       timezone: "UTC"
     open-pull-requests-limit: 10
-    assignees:
-      - "geoffsee"
     groups:
       cargo-minor-and-patch:
         patterns:
@@ -34,8 +32,6 @@ updates:
       time: "09:00"
       timezone: "UTC"
     open-pull-requests-limit: 5
-    assignees:
-      - "geoffsee"
     groups:
       github-actions:
         patterns:

@@ -2,12 +2,12 @@
 
 WASM_OPT := $(shell command -v wasm-opt 2>/dev/null)
 
-.PHONY: all build optimize clean publish test fmt component smoke
+.PHONY: all build optimize clean publish test fmt component smoke package
 
 all: optimize
 
 build:
-	wasm-pack build --target web --release
+	wasm-pack build --target web --release --scope di-framework
 
 optimize: build
 ifeq ($(WASM_OPT),)
@@ -19,8 +19,12 @@ else
 	@ls -lh pkg/wasm_pqc_subtle_bg.wasm
 endif
 
-publish: optimize
-	cd pkg && npm publish --access public
+# pkg/ with the component surface added (what `publish` and the release workflow ship)
+package: optimize component
+	node scripts/package-component.mjs
+
+publish: package
+	cd pkg && npm publish --access public --provenance --ignore-scripts
 
 test:
 	cargo test --all-features

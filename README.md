@@ -21,7 +21,7 @@ This library provides ML-KEM, ML-DSA, and Argon2 via WebAssembly, enabling post-
 ## Installation
 
 ```bash
-npm install wasm-pqc-subtle
+npm install @di-framework/wasm-pqc-subtle
 ```
 
 ## Usage
@@ -33,7 +33,7 @@ import init, {
   ml_kem_768_generate_keypair,
   ml_kem_768_encapsulate,
   ml_kem_768_decapsulate,
-} from "wasm-pqc-subtle";
+} from "@di-framework/wasm-pqc-subtle";
 
 await init();
 
@@ -58,7 +58,7 @@ import init, {
   ml_dsa_65_generate_keypair,
   ml_dsa_65_sign,
   ml_dsa_65_verify,
-} from "wasm-pqc-subtle";
+} from "@di-framework/wasm-pqc-subtle";
 
 await init();
 
@@ -79,7 +79,7 @@ ML-DSA-44 and ML-DSA-87 functions follow the same pattern (`ml_dsa_44_generate_k
 ### Password Hashing (Argon2)
 
 ```javascript
-import init, { argon2id_hash, argon2_verify } from "wasm-pqc-subtle";
+import init, { argon2id_hash, argon2_verify } from "@di-framework/wasm-pqc-subtle";
 
 await init();
 
@@ -108,6 +108,17 @@ cargo binstall wasm-tools wac-cli     # or cargo install
 make component                        # -> dist/pqc-subtle.wasm (+ .wit, BUILD-INFO)
 make smoke                            # compose tests/smoke-consumer with it and run under wasmtime
 ```
+
+The npm package ships this component too, under `@di-framework/wasm-pqc-subtle/component`: `component/pqc-subtle.wasm`, its WIT in `component/wit/`, and a JavaScript module whose exports are the WIT imports:
+
+```js
+import { argon2, mlKem } from '@di-framework/wasm-pqc-subtle/component';
+
+const phc = argon2.hash(password, { memoryKib: 16384, iterations: 2, parallelism: 1, outputLength: null });
+const kp = mlKem.generateKeypair('ml-kem-768');
+```
+
+That module is for JavaScript running inside a component (componentize-qjs, jco); the bundler must leave `pqc-subtle:crypto/*` specifiers external, and the build composes the `.wasm` in. The package manifest's `component` field names the binary, the WIT directory, and the package so a build tool can do that without configuration. In a browser or Node, use the package root instead.
 
 A consumer declares the imports in its own WIT (the `imports` world in `wit/world.wit` is that list) and gets bindings from `wit-bindgen`, `jco`, or componentize-qjs. Then:
 
@@ -145,6 +156,8 @@ Encapsulates against a public key, returning a ciphertext and shared secret.
 
 Decapsulates a ciphertext with a secret key, returning the shared secret.
 
+`secret_key` is the 64-byte seed that `ml_kem_768_generate_keypair` returns (the FIPS 203 seed form the `ml-kem` crate standardised on in 0.3). The expanded 2400-byte (ML-KEM-768) / 3168-byte (ML-KEM-1024) encoding that earlier releases produced is still accepted.
+
 #### `ml_kem_1024_generate_keypair()` / `ml_kem_1024_encapsulate()` / `ml_kem_1024_decapsulate()`
 
 Same interface as above, using ML-KEM-1024 parameters.
@@ -162,6 +175,8 @@ Generates an ML-DSA-65 key pair.
 #### `ml_dsa_65_sign(secret_key: Uint8Array, message: Uint8Array) -> Uint8Array`
 
 Signs a message with a secret key.
+
+`secret_key` is the 32-byte seed that `ml_dsa_65_generate_keypair` returns (FIPS 204 seed form, `ml-dsa` 0.1). The expanded signing key that earlier releases produced (2560 / 4032 / 4896 bytes for ML-DSA-44 / 65 / 87) is still accepted.
 
 #### `ml_dsa_65_verify(public_key: Uint8Array, message: Uint8Array, signature: Uint8Array) -> boolean`
 
