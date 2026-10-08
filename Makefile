@@ -6,8 +6,13 @@ WASM_OPT := $(shell command -v wasm-opt 2>/dev/null)
 
 all: optimize
 
+# The complete npm package: wasm-pack output plus the component surface. wasm-pack
+# rewrites pkg/package.json on every run, so the component step always follows it here
+# and nothing else should write pkg/ on its own.
 build:
 	wasm-pack build --target web --release --scope di-framework
+	scripts/build-component.sh
+	node scripts/package-component.mjs
 
 optimize: build
 ifeq ($(WASM_OPT),)
@@ -19,9 +24,8 @@ else
 	@ls -lh pkg/wasm_pqc_subtle_bg.wasm
 endif
 
-# pkg/ with the component surface added (what `publish` and the release workflow ship)
-package: optimize component
-	node scripts/package-component.mjs
+# Alias kept for scripts and docs: `build` already includes the component surface.
+package: optimize
 
 publish: package
 	cd pkg && npm publish --access public --provenance --ignore-scripts
